@@ -5,8 +5,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sys import getsizeof
-
+import xgboost as xgb
 # 对字段的类型进行处理，使其占用内存更少
+def ceate_feature_map(features):
+    outfile = open('xgb.fmap', 'w')
+    i = 0
+    for feat in features:
+        outfile.write('{0}\t{1}\tq\n'.format(i, feat))
+        i = i + 1
+    outfile.close()
 def getData():
     dataIterator = pd.read_csv('G:/tempdata/playersPay/tap4fun/tap_fun_train.csv',iterator=True)
     data = dataIterator.get_chunk(10000)
@@ -30,11 +37,13 @@ def getLable(x):
 # print(data.columns)
 data['prediction_pay_price'] = data['prediction_pay_price'].apply(getLable)
 y = data['prediction_pay_price'].astype('int')
-print(len(y))
-print(len(y[y>1]))
-print(len(y[y<0]))
 x = data.drop('prediction_pay_price',axis=1)
-
+colum = ['ivory_add_value','ivory_reduce_value','general_acceleration_reduce_value',
+         'bd_dolmen_level','training_acceleration_reduce_value','pvp_lanch_count',
+         'stone_add_value','treatment_acceleraion_add_value','sr_training_speed_level',
+         'stone_reduce_value','building_acceleration_add_value','wood_reduce_value',
+         'pay_price','avg_online_minutes','reaserch_acceleration_add_value']
+x = data[colum]
 from sklearn import svm
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
@@ -47,8 +56,8 @@ def svmPro():
     print(clf.score(x_test, y_test))
     print('测试集准确率：', accuracy_score(y_test, clf.predict(x_test)))
 
-def xgb():
-    import xgboost as xgb
+def xgbclassfier():
+    import operator
     from sklearn.tree import DecisionTreeClassifier
     data_train = xgb.DMatrix(x_train, label=y_train)
     data_test = xgb.DMatrix(x_test, label=y_test)
@@ -61,7 +70,22 @@ def xgb():
     y_hat[y_hat<=0.5]=0
 
     # 获取特征重要程度
-    importance = bst.get_fscore()
+    def getImportFeature():
+
+        importance = bst.get_fscore()
+        ceate_feature_map(x_train.columns)
+        importance = bst.get_fscore(fmap='xgb.fmap')
+        importance = sorted(importance.items(), key=operator.itemgetter(1))
+        df = pd.DataFrame(importance, columns=['feature', 'fscore'])
+        df['fscore'] = df['fscore'] / df['fscore'].sum()
+        df.to_csv("feat_importance.csv", index=False)
+        plt.figure()
+        df.plot(kind='barh', x='feature', y='fscore', legend=False, figsize=(6, 10))
+        plt.title('XGBoost Feature Importance')
+        plt.xlabel('relative importance')
+        plt.savefig('feat_importance.png')
+        plt.show()
+
     result = y_test == y_hat
     print(len(y_hat[y_hat==1]))
     print(len(y_hat[y_hat ==0]))
@@ -71,6 +95,33 @@ def randomForest():
     from sklearn.tree import DecisionTreeClassifier
 
 def regreseion():
-    from xgboost import XGBRegressor
-
-xgb()
+    # train = getData()
+    # data = train[train['prediction_pay_price']>0]
+    # data.to_csv('havePay.csv')
+    data = pd.read_csv('havePay.csv')
+    x = data[colum]
+    y = data['prediction_pay_price']
+    x_train, x_test, y_train, y_test = train_test_split(x, y, random_state=1, train_size=0.6)
+    params = {
+        'min_child_weight': 5,
+        'eta': 0.5,
+        'colsample_bytree': 0.6,
+        'max_depth': 7,
+        'subsample': 0.9,
+        'alpha': 0.04,
+        'gamma': 0,
+        'silent': 0,
+        'verbose_eval': True,
+        'seed': 12
+    }
+    rounds = 10
+    xgtrain = xgb.DMatrix(x_train, label=y_train)
+    xgtest = xgb.DMatrix(x_test)
+    print('Trainning')
+    bst = xgb.train(params, xgtrain, num_boost_round=rounds)
+    y_hat = bst.predict(xgtest)
+    mse = np.average((y_hat - np.array(y_test)) ** 2)  # Mean Squared Error
+    rmse = np.sqrt(mse)  # Root Mean Squared Error
+    print(mse, rmse)
+# 获取
+regreseion()
